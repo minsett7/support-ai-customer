@@ -1,0 +1,6 @@
+{
+  "name": "Customer Support Portal",
+  "description": "A modern customer-facing help center, submitting and tracking tickets, with inline email sandbox logs and interactive live chat.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
