@@ -1,4 +1,6 @@
 const chatService = require('../services/chat.service');
+const ticketService = require('../services/ticket.service');
+const { normalizeTrackingCode } = require('../utils/trackingCode');
 
 function emitSocketError(socket, message) {
   socket.emit('socket_error', { message });
@@ -68,6 +70,31 @@ function registerChatSocket(io) {
         io.to(`chat:${savedMessage.sessionId}`).emit('receive_message', savedMessage);
       } catch (error) {
         emitSocketError(socket, error.message || 'Unable to send message');
+      }
+    });
+
+    socket.on('join_ticket_tracking', async (payload = {}) => {
+      try {
+        // Tracking codes act as bearer secrets in this MVP.
+        // TODO: Add authenticated ticket ownership checks.
+        const trackingCode = normalizeTrackingCode(payload.trackingCode);
+
+        if (!trackingCode) {
+          emitSocketError(socket, 'trackingCode is required');
+          return;
+        }
+
+        const ticket = await ticketService.getTicketByTrackingCode(trackingCode);
+        const room = `ticket:${ticket.trackingCode}`;
+
+        socket.join(room);
+        socket.emit('joined_ticket_tracking', {
+          trackingCode: ticket.trackingCode,
+          room,
+          status: ticket.status
+        });
+      } catch (error) {
+        emitSocketError(socket, error.message || 'Unable to join ticket tracking');
       }
     });
 

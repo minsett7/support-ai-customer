@@ -291,6 +291,12 @@ Expected response:
 | `GET` | `/api/agent/chat/sessions?status=waiting` | Agent | Load the waiting queue |
 | `POST` | `/api/chat/sessions/:sessionId/accept` | Agent | Atomically claim a chat |
 | `PATCH` | `/api/chat/sessions/:sessionId/close` | Customer/Agent | Close a chat |
+| `POST` | `/api/tickets` | Customer | Submit an issue ticket |
+| `GET` | `/api/tickets/track/:trackingCode` | Customer | Track a ticket by public code |
+| `GET` | `/api/agent/tickets?status=submitted` | Agent | Load the ticket queue |
+| `POST` | `/api/tickets/:trackingCode/accept` | Agent | Atomically claim a ticket |
+| `POST` | `/api/tickets/:trackingCode/replies` | Agent | Reply and optionally resolve a ticket |
+| `PATCH` | `/api/tickets/:trackingCode/status` | Agent | Update ticket status |
 
 ## API
 
@@ -450,6 +456,13 @@ API errors use:
 | Server to client | `socket_error` | Requesting socket | Report socket validation errors |
 | Socket.IO | `connect` | Requesting socket | Connection established |
 | Socket.IO | `disconnect` | Requesting socket | Connection ended |
+| Client to server | `join_ticket_tracking` | Customer socket | Join `ticket:{trackingCode}` |
+| Server to client | `joined_ticket_tracking` | Requesting socket | Confirm ticket tracking join |
+| Server to client | `new_ticket` | `support_dashboard` | Announce a submitted ticket |
+| Server to client | `ticket_claimed` | `support_dashboard` | Remove an accepted ticket from queues |
+| Server to client | `ticket_accepted` | `ticket:{trackingCode}` | Notify customer of acceptance |
+| Server to client | `ticket_reply` | Ticket room and support dashboard | Deliver a persisted agent reply |
+| Server to client | `ticket_status_updated` | Ticket room and support dashboard | Notify ticket status change |
 
 Chat acceptance is performed through `POST /api/chat/sessions/:sessionId/accept`. There is no `accept_chat_session` Socket.IO event in this MVP.
 
@@ -1146,6 +1159,459 @@ The session no longer accepts room joins or messages.
 
 `%20` means the request URL contains a trailing space. Remove the space after the endpoint path.
 
+## Issue Ticket System
+
+The ticket system is separate from live chat. Tickets are asynchronous support requests and use public tracking codes instead of customer email addresses.
+
+### Ticket Lifecycle
+
+```text
+submitted -> accepted -> in_progress -> resolved -> closed
+```
+
+The public code format is:
+
+```text
+TCK-8F3K2Q
+```
+
+The code is normalized to uppercase and acts as a bearer secret for the MVP. Internal database UUIDs are never used as customer tracking codes.
+
+### Submit Ticket
+
+```text
+POST /api/tickets
+```
+
+Request:
+
+```json
+{
+  "customerFullName": "Mg Mg",
+  "category": "Billing",
+  "priority": "high",
+  "subject": "Double charge issue",
+  "description": "I was charged twice yesterday."
+}
+```
+
+Limits:
+
+| Field | Maximum length |
+| --- | --- |
+| `customerFullName` | 100 |
+| `category` | 80 |
+| `priority` | `high`, `medium`, or `low` |
+| `subject` | 150 |
+| `description` | 2000 |
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "trackingCode": "TCK-8F3K2Q",
+    "status": "submitted"
+  }
+}
+```
+
+The backend emits `new_ticket` only to `support_dashboard`:
+
+```json
+{
+  "trackingCode": "TCK-8F3K2Q",
+  "customerFullName": "Mg Mg",
+  "category": "Billing",
+  "priority": "high",
+  "subject": "Double charge issue",
+  "description": "I was charged twice yesterday.",
+  "status": "submitted",
+  "createdAt": "2026-06-09T00:00:00.000Z"
+}
+```
+
+### Track Ticket
+
+```text
+GET /api/tickets/track/:trackingCode
+```
+
+This public endpoint returns only the customer-facing ticket fields:
+
+```json
+{
+  "success": true,
+  "data": {
+    "trackingCode": "TCK-8F3K2Q",
+    "customerFullName": "Mg Mg",
+    "category": "Billing",
+    "priority": "high",
+    "subject": "Double charge issue",
+    "description": "I was charged twice yesterday.",
+    "status": "submitted",
+    "createdAt": "2026-06-09T00:00:00.000Z",
+    "acceptedAt": null,
+    "updatedAt": "2026-06-09T00:00:00.000Z",
+    "resolvedAt": null,
+    "closedAt": null,
+    "replies": []
+  }
+}
+```
+
+### Load Agent Ticket Queue
+
+```text
+GET /api/agent/tickets?status=submitted
+```
+
+Allowed queue filters:
+
+```text
+submitted
+accepted
+in_progress
+resolved
+closed
+```
+
+Tickets are ordered by `created_at` ascending.
+
+### Accept Ticket
+
+```text
+POST /api/tickets/:trackingCode/accept
+```
+
+Request:
+
+```json
+{
+  "agentId": "agent-001"
+}
+```
+
+Acceptance is a conditional database update. It only succeeds while the ticket is `submitted` and unassigned.
+
+On success:
+
+- `ticket_accepted` is emitted to `ticket:{trackingCode}`.
+- `ticket_claimed` is emitted to `support_dashboard`.
+
+Payload:
+
+```json
+{
+  "trackingCode": "TCK-8F3K2Q",
+  "assignedAgentId": "agent-001",
+  "status": "accepted",
+  "acceptedAt": "2026-06-09T00:02:00.000Z",
+  "updatedAt": "2026-06-09T00:02:00.000Z"
+}
+```
+
+A competing acceptance receives:
+
+```json
+{
+  "success": false,
+  "message": "Ticket already accepted"
+}
+```
+
+### Agent Reply And Resolve
+
+```text
+POST /api/tickets/:trackingCode/replies
+```
+
+The ticket must already be accepted. The `agentId` must match the ticket's assigned agent.
+
+Reply while continuing work:
+
+```json
+{
+  "agentId": "agent-001",
+  "agentName": "Sarah (Support Specialist)",
+  "message": "I found the duplicate charge and I am checking the refund record.",
+  "status": "in_progress"
+}
+```
+
+Reply and resolve in one request:
+
+```json
+{
+  "agentId": "agent-001",
+  "agentName": "Sarah (Support Specialist)",
+  "message": "The duplicate charge has been refunded. It should appear within 3-5 business days.",
+  "status": "resolved"
+}
+```
+
+`status` is optional. If omitted on the first reply, an accepted ticket moves to `in_progress`.
+
+Limits:
+
+| Field | Maximum length |
+| --- | --- |
+| `agentId` | 100 |
+| `agentName` | 100 |
+| `message` | 4000 |
+
+Response:
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "reply-uuid",
+    "trackingCode": "TCK-8F3K2Q",
+    "senderType": "agent",
+    "senderId": "agent-001",
+    "senderName": "Sarah (Support Specialist)",
+    "message": "The duplicate charge has been refunded.",
+    "createdAt": "2026-06-09T00:04:00.000Z",
+    "status": "resolved",
+    "updatedAt": "2026-06-09T00:04:00.000Z",
+    "resolvedAt": "2026-06-09T00:04:00.000Z"
+  }
+}
+```
+
+The backend persists the reply and emits `ticket_reply` only to:
+
+```text
+ticket:{trackingCode}
+support_dashboard
+```
+
+The customer tracker appends the reply to Conversation Logs immediately. If the reply changes status, `ticket_status_updated` is emitted as well.
+
+### Update Ticket Status
+
+```text
+PATCH /api/tickets/:trackingCode/status
+```
+
+Request:
+
+```json
+{
+  "status": "in_progress"
+}
+```
+
+Allowed update values:
+
+```text
+in_progress
+resolved
+closed
+```
+
+The backend emits `ticket_status_updated` to both the ticket room and `support_dashboard`:
+
+```json
+{
+  "trackingCode": "TCK-8F3K2Q",
+  "status": "in_progress",
+  "updatedAt": "2026-06-09T00:03:00.000Z",
+  "resolvedAt": null,
+  "closedAt": null
+}
+```
+
+### Customer Ticket Socket
+
+The customer joins ticket tracking after loading the ticket:
+
+```js
+socket.emit('join_ticket_tracking', {
+  trackingCode: 'TCK-8F3K2Q'
+});
+```
+
+The server confirms:
+
+```js
+socket.on('joined_ticket_tracking', (payload) => {
+  console.log(payload);
+});
+```
+
+```json
+{
+  "trackingCode": "TCK-8F3K2Q",
+  "room": "ticket:TCK-8F3K2Q",
+  "status": "submitted"
+}
+```
+
+Listen for updates:
+
+```js
+socket.on('ticket_accepted', (ticket) => {
+  console.log('Ticket accepted', ticket);
+});
+
+socket.on('ticket_status_updated', (ticket) => {
+  console.log('Ticket status changed', ticket);
+});
+
+socket.on('ticket_reply', (reply) => {
+  console.log('Agent replied', reply);
+});
+```
+
+Ticket events are never broadcast globally:
+
+```text
+Customer updates -> ticket:{trackingCode}
+Support queue updates -> support_dashboard
+```
+
+### Support Dashboard Ticket Integration
+
+The support dashboard uses the same socket connection and `join_support_dashboard` event as live chat.
+
+```js
+socket.on('new_ticket', (ticket) => {
+  // Add to the submitted ticket queue.
+});
+
+socket.on('ticket_claimed', ({ trackingCode }) => {
+  // Remove from the submitted queue.
+});
+
+socket.on('ticket_status_updated', (ticket) => {
+  // Update the ticket in the agent UI.
+});
+
+socket.on('ticket_reply', (reply) => {
+  // Update the active ticket conversation.
+});
+```
+
+Recommended agent flow:
+
+1. Join `support_dashboard`.
+2. Fetch `/api/agent/tickets?status=submitted`.
+3. Merge `new_ticket` events without duplicating tracking codes.
+4. Accept a selected ticket through the REST API.
+5. Remove `ticket_claimed` tickets from the submitted queue.
+6. Update status through the REST API.
+7. Send replies through `POST /api/tickets/:trackingCode/replies`.
+
+### Ticket Database SQL
+
+Run [supabase/support_tickets.sql](supabase/support_tickets.sql) in the Supabase SQL editor. The complete SQL is also included below:
+
+```sql
+create extension if not exists pgcrypto;
+
+create table if not exists support_tickets (
+  id uuid primary key default gen_random_uuid(),
+  tracking_code text not null unique,
+  customer_full_name text not null,
+  category text not null,
+  priority text not null default 'medium',
+  subject text not null,
+  description text not null,
+  status text not null default 'submitted',
+  assigned_agent_id text null,
+  created_at timestamp with time zone not null default now(),
+  accepted_at timestamp with time zone null,
+  updated_at timestamp with time zone not null default now(),
+  resolved_at timestamp with time zone null,
+  closed_at timestamp with time zone null,
+  constraint support_tickets_status_check
+    check (status in ('submitted', 'accepted', 'in_progress', 'resolved', 'closed')),
+  constraint support_tickets_priority_check
+    check (priority in ('high', 'medium', 'low')),
+  constraint support_tickets_customer_name_length_check
+    check (char_length(customer_full_name) between 1 and 100),
+  constraint support_tickets_category_length_check
+    check (char_length(category) between 1 and 80),
+  constraint support_tickets_subject_length_check
+    check (char_length(subject) between 1 and 150),
+  constraint support_tickets_description_length_check
+    check (char_length(description) between 1 and 2000)
+);
+
+alter table support_tickets
+  add column if not exists priority text not null default 'medium';
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'support_tickets_priority_check'
+  ) then
+    alter table support_tickets
+      add constraint support_tickets_priority_check
+      check (priority in ('high', 'medium', 'low'));
+  end if;
+end
+$$;
+
+create index if not exists idx_support_tickets_tracking_code
+  on support_tickets (tracking_code);
+
+create index if not exists idx_support_tickets_status_created_at
+  on support_tickets (status, created_at);
+
+create index if not exists idx_support_tickets_agent_status
+  on support_tickets (assigned_agent_id, status);
+
+create table if not exists support_ticket_replies (
+  id uuid primary key default gen_random_uuid(),
+  ticket_id uuid not null references support_tickets(id) on delete cascade,
+  tracking_code text not null,
+  sender_type text not null default 'agent',
+  sender_id text null,
+  sender_name text not null,
+  message text not null,
+  created_at timestamp with time zone not null default now(),
+  constraint support_ticket_replies_sender_type_check
+    check (sender_type in ('customer', 'agent', 'system')),
+  constraint support_ticket_replies_sender_name_length_check
+    check (char_length(sender_name) between 1 and 100),
+  constraint support_ticket_replies_message_length_check
+    check (char_length(message) between 1 and 4000)
+);
+
+create index if not exists idx_support_ticket_replies_ticket_created_at
+  on support_ticket_replies (ticket_id, created_at);
+
+create index if not exists idx_support_ticket_replies_tracking_code
+  on support_ticket_replies (tracking_code);
+```
+
+### Ticket Manual Test
+
+1. Run the ticket SQL in Supabase.
+2. Rebuild and start the Docker backend.
+3. Start the customer frontend.
+4. Submit a ticket without an email address.
+5. Copy the generated `TCK-XXXXXX` tracking code.
+6. Open Track Ticket and load it with only that code.
+7. Confirm the customer page shows `submitted` and live updates are connected.
+8. Join `support_dashboard` from a support frontend or Socket.IO console.
+9. Confirm `new_ticket` appears for newly submitted tickets.
+10. Accept it with `POST /api/tickets/:trackingCode/accept`.
+11. Confirm the customer receives `ticket_accepted` and a notification.
+12. Reply with `POST /api/tickets/:trackingCode/replies`.
+13. Confirm the reply appears immediately in Conversation Logs.
+14. Reply again with `"status": "resolved"`.
+15. Confirm the milestone tracker reaches Resolved.
+16. Confirm no ticket event appears in unrelated chat or ticket rooms.
+
+The customer frontend stores the latest tracking code in `localStorage` for convenience. It does not store the internal ticket UUID.
+
 ## MVP Security Notes
 
 This backend is intentionally simple for MVP integration.
@@ -1163,3 +1629,13 @@ Before production, add:
 For this MVP, `agentId`, `senderType`, and `senderId` come from client payloads. They must come from verified JWT claims before production.
 
 Messages are never emitted globally. Chat messages, `chat_accepted`, and `chat_closed` are sent only to `chat:{sessionId}`. Queue events are sent only to `support_dashboard`.
+
+Ticket-specific MVP limitations:
+
+- No customer or agent authentication.
+- The tracking code acts as a bearer secret.
+- Anyone with the tracking code can view the customer-facing ticket details.
+- Agent acceptance and status updates are currently unauthenticated.
+- Add rate limiting to ticket submission and tracking.
+- Add Supabase RLS and stricter ownership rules.
+- Add audit logs for acceptance and status transitions.

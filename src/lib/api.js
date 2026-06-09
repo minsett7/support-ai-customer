@@ -54,4 +54,27 @@ export function closeChatSession(sessionId) {
   });
 }
 
+export function createSupportTicket({
+  customerFullName,
+  category,
+  priority,
+  subject,
+  description
+}) {
+  return request('/api/tickets', {
+    method: 'POST',
+    body: JSON.stringify({
+      customerFullName,
+      category,
+      priority,
+      subject,
+      description
+    })
+  });
+}
+
+export function trackSupportTicket(trackingCode) {
+  return request(`/api/tickets/track/${encodeURIComponent(trackingCode.trim().toUpperCase())}`);
+}
+
 export { BACKEND_URL };

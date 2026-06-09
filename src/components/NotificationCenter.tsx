@@ -32,8 +32,8 @@ export default function NotificationCenter({
                 <Mail className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="font-semibold text-slate-800 text-lg">Customer Email Sandbox</h2>
-                <p className="text-xs text-slate-500 font-medium">Previews of real-time support alerts</p>
+                <h2 className="font-semibold text-slate-800 text-lg">Customer Notifications</h2>
+                <p className="text-xs text-slate-500 font-medium">Live support and ticket updates</p>
               </div>
             </div>
             <div className="flex items-center space-x-2">
@@ -90,7 +90,7 @@ export default function NotificationCenter({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between">
                         <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                          Email Notification
+                          {notif.type === 'system' ? 'System Notification' : 'Email Notification'}
                         </span>
                         <span className="text-[10px] text-slate-400 flex items-center space-x-1 font-mono">
                           <Clock className="h-3 w-3 inline-block" />
@@ -135,7 +135,7 @@ export default function NotificationCenter({
           <div className="p-4 border-t border-slate-100 bg-slate-50 text-xs text-slate-500 rounded-b-xl flex items-start space-x-2">
             <ShieldAlert className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
             <p className="leading-relaxed">
-              <strong>Simulated sandbox workspace:</strong> These notifications demo the email responses sent to customer mailboxes. In a production environment, this is dispatched by transactional email relays.
+              <strong>MVP notification center:</strong> Live ticket status events appear here while the customer is viewing the tracked ticket.
             </p>
           </div>
         </div>
