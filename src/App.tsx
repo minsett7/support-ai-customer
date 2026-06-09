@@ -9,7 +9,7 @@ import { MOCK_CUSTOMER, MOCK_TICKETS, MOCK_ARTICLES, MOCK_NOTIFICATIONS } from '
 import Navigation from './components/Navigation';
 import Footer from './components/Footer';
 import NotificationCenter from './components/NotificationCenter';
-import ChatWidget from './components/ChatWidget';
+import CustomerLiveChat from './components/live-chat/CustomerLiveChat';
 import HomeView from './components/HomeView';
 import SubmitTicketView from './components/SubmitTicketView';
 import TrackTicketView from './components/TrackTicketView';
@@ -311,11 +311,7 @@ export default function App() {
       />
 
       {/* Floater Live chat integration */}
-      <ChatWidget
-        onNavigate={navigate}
-        customerEmail={MOCK_CUSTOMER.email}
-        customerName={MOCK_CUSTOMER.name}
-      />
+      <CustomerLiveChat />
 
     </div>
   );

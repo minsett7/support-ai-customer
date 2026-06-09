@@ -62,6 +62,28 @@ const getSessionMessages = asyncHandler(async (req, res) => {
   });
 });
 
+const acceptChatSession = asyncHandler(async (req, res) => {
+  // TODO: Replace body agentId with the agent ID from a verified JWT.
+  // TODO: Add agent endpoint rate limiting and acceptance audit logs.
+  const agentId = requireString(req.body.agentId, 'agentId');
+  const session = await chatService.acceptChatSession(req.params.sessionId, agentId);
+  const io = req.app.get('io');
+
+  const payload = {
+    sessionId: session.id,
+    assignedAgentId: session.assignedAgentId,
+    status: session.status
+  };
+
+  io.to('support_dashboard').emit('session_claimed', payload);
+  io.to(`chat:${session.id}`).emit('chat_accepted', payload);
+
+  res.json({
+    success: true,
+    data: session
+  });
+});
+
 const closeChatSession = asyncHandler(async (req, res) => {
   // TODO: Require support-agent auth before allowing agents/admins to close chats.
   const session = await chatService.closeChatSession(req.params.sessionId);
@@ -83,5 +105,6 @@ module.exports = {
   createChatSession,
   getChatSession,
   getSessionMessages,
+  acceptChatSession,
   closeChatSession
 };

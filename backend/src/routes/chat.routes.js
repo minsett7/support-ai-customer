@@ -6,6 +6,7 @@ const router = express.Router();
 router.post('/sessions', chatController.createChatSession);
 router.get('/sessions/:sessionId', chatController.getChatSession);
 router.get('/sessions/:sessionId/messages', chatController.getSessionMessages);
+router.post('/sessions/:sessionId/accept', chatController.acceptChatSession);
 router.patch('/sessions/:sessionId/close', chatController.closeChatSession);
 
 module.exports = router;

@@ -9,7 +9,7 @@ function registerChatSocket(io) {
     console.log(`Socket connected: ${socket.id}`);
 
     socket.on('join_support_dashboard', () => {
-      // TODO: Require support-agent auth before joining this room.
+      // TODO: Require a verified support-agent JWT before joining this room.
       socket.join('support_dashboard');
       socket.emit('joined_support_dashboard', {
         room: 'support_dashboard'
@@ -18,21 +18,37 @@ function registerChatSocket(io) {
 
     socket.on('join_chat_session', async (payload = {}) => {
       try {
-        // TODO: Add customer/support-agent authorization for session access.
-        const { sessionId } = payload;
+        // TODO: Derive customer/agent identity from JWT auth instead of payload data.
+        const { sessionId, agentId } = payload;
 
         if (!sessionId) {
           emitSocketError(socket, 'sessionId is required');
           return;
         }
 
-        await chatService.getChatSessionById(sessionId);
+        const session = await chatService.getChatSessionById(sessionId);
+
+        if (session.status === 'closed') {
+          emitSocketError(socket, 'Chat session is closed');
+          return;
+        }
+
+        if (
+          agentId &&
+          session.status !== 'waiting' &&
+          session.assignedAgentId !== agentId
+        ) {
+          emitSocketError(socket, 'Agent is not assigned to this chat session');
+          return;
+        }
 
         const room = `chat:${sessionId}`;
         socket.join(room);
         socket.emit('joined_chat_session', {
           sessionId,
-          room
+          room,
+          status: session.status,
+          assignedAgentId: session.assignedAgentId
         });
       } catch (error) {
         emitSocketError(socket, error.message || 'Unable to join chat session');
@@ -41,6 +57,7 @@ function registerChatSocket(io) {
 
     socket.on('send_message', async (payload = {}) => {
       try {
+        // TODO: Derive senderType and senderId from verified JWT claims.
         const savedMessage = await chatService.createMessage({
           sessionId: payload.sessionId,
           senderType: payload.senderType,

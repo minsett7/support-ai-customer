@@ -6,6 +6,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 
 const chatRoutes = require('./routes/chat.routes');
+const agentRoutes = require('./routes/agent.routes');
 const registerChatSocket = require('./sockets/chat.socket');
 const { notFoundHandler, errorHandler } = require('./utils/errors');
 
@@ -14,7 +15,9 @@ const server = http.createServer(app);
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
+  process.env.SUPPORT_FRONTEND_URL,
   'http://localhost:3000',
+  'http://localhost:3001',
   'http://localhost:5173'
 ].filter(Boolean);
 
@@ -34,6 +37,7 @@ const io = new Server(server, {
   cors: corsOptions
 });
 
+// TODO: Add a Redis adapter when the backend is deployed across multiple instances.
 app.set('io', io);
 
 app.use(cors(corsOptions));
@@ -47,6 +51,7 @@ app.get('/health', (req, res) => {
 });
 
 app.use('/api/chat', chatRoutes);
+app.use('/api/agent/chat', agentRoutes);
 
 registerChatSocket(io);
 
