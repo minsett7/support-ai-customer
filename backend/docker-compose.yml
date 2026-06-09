@@ -1,13 +1,13 @@
 services:
   chat-backend:
     build:
-      context: ./backend
+      context: .
       dockerfile: Dockerfile
     container_name: support-chat-backend
     restart: unless-stopped
     init: true
     env_file:
-      - ./backend/.env
+      - .env
     environment:
       NODE_ENV: production
       PORT: 5000
