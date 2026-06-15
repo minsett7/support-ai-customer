@@ -8,10 +8,11 @@ import {
   ExternalLink,
   Info,
   RefreshCw,
+  Send,
   User
 } from 'lucide-react';
 import { createSocket } from '../lib/socket';
-import { trackSupportTicket } from '../lib/api';
+import { createCustomerTicketReply, trackSupportTicket } from '../lib/api';
 import {
   PublicSupportTicket,
   SupportTicketReply,
@@ -76,6 +77,8 @@ export default function TicketDetailView({
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isConnected, setIsConnected] = useState(false);
+  const [replyMessage, setReplyMessage] = useState('');
+  const [isSendingReply, setIsSendingReply] = useState(false);
 
   async function loadTicket() {
     setError('');
@@ -83,7 +86,10 @@ export default function TicketDetailView({
 
     try {
       const result = await trackSupportTicket(normalizedCode);
-      setTicket(result);
+      setTicket({
+        ...result,
+        replies: result.replies || []
+      });
       localStorage.setItem('latestSupportTicketCode', result.trackingCode);
     } catch (requestError) {
       setError(
@@ -157,11 +163,13 @@ export default function TicketDetailView({
           replies: [...current.replies, payload]
         };
       });
-      onTicketNotification(
-        normalizedCode,
-        `New reply from ${payload.senderName}`,
-        payload.message
-      );
+      if (payload.senderType === 'agent') {
+        onTicketNotification(
+          normalizedCode,
+          `New reply from ${payload.senderName}`,
+          payload.message
+        );
+      }
     }
 
     function handleStatusUpdated(payload: {
@@ -208,6 +216,45 @@ export default function TicketDetailView({
     };
   }, [normalizedCode, onTicketNotification]);
 
+  async function handleCustomerReply(event: React.FormEvent) {
+    event.preventDefault();
+    const cleanMessage = replyMessage.trim();
+
+    if (!cleanMessage || !ticket || ticket.status === 'closed') {
+      return;
+    }
+
+    setError('');
+    setIsSendingReply(true);
+
+    try {
+      const reply = await createCustomerTicketReply(normalizedCode, cleanMessage);
+
+      setTicket((current) => {
+        if (!current || current.replies.some((item) => item.id === reply.id)) {
+          return current;
+        }
+
+        return {
+          ...current,
+          status: reply.status,
+          updatedAt: reply.updatedAt,
+          resolvedAt: reply.resolvedAt,
+          replies: [...current.replies, reply]
+        };
+      });
+      setReplyMessage('');
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : 'Unable to send your reply.'
+      );
+    } finally {
+      setIsSendingReply(false);
+    }
+  }
+
   if (isLoading) {
     return <div className="py-20 text-center text-sm text-slate-500">Loading ticket...</div>;
   }
@@ -229,7 +276,10 @@ export default function TicketDetailView({
   }
 
   const currentMilestone = getMilestone(ticket);
-  const assignedAgent = ticket.replies.at(-1)?.senderName || (
+  const latestAgentReply = [...ticket.replies]
+    .reverse()
+    .find((reply) => reply.senderType === 'agent');
+  const assignedAgent = latestAgentReply?.senderName || (
     ticket.status === 'submitted' ? 'Awaiting assignment' : 'Support specialist'
   );
   const milestones = [
@@ -373,32 +423,52 @@ export default function TicketDetailView({
                 </div>
               </article>
 
-              {ticket.replies.map((reply) => (
-                <article
-                  key={reply.id}
-                  className="rounded-2xl border border-slate-100 border-l-4 border-l-fuchsia-500 bg-white p-5 shadow-xs"
-                >
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-fuchsia-50 text-fuchsia-600">
-                      <Building2 className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold text-slate-800">{reply.senderName}</span>
-                          <span className="rounded-full bg-slate-50 px-2 py-0.5 font-mono text-[9px] text-slate-400">
-                            Support Agent
+              {ticket.replies.map((reply) => {
+                const isCustomer = reply.senderType === 'customer';
+
+                return (
+                  <article
+                    key={reply.id}
+                    className={`rounded-2xl border border-slate-100 border-l-4 bg-white p-5 shadow-xs ${
+                      isCustomer ? 'border-l-violet-500' : 'border-l-fuchsia-500'
+                    }`}
+                  >
+                    <div className="flex items-start gap-4">
+                      <div
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+                          isCustomer
+                            ? 'bg-violet-50 text-violet-600'
+                            : 'bg-fuchsia-50 text-fuchsia-600'
+                        }`}
+                      >
+                        {isCustomer ? (
+                          <User className="h-4 w-4" />
+                        ) : (
+                          <Building2 className="h-4 w-4" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-slate-800">
+                              {reply.senderName}
+                            </span>
+                            <span className="rounded-full bg-slate-50 px-2 py-0.5 font-mono text-[9px] text-slate-400">
+                              {isCustomer ? 'Ticket Author' : 'Support Agent'}
+                            </span>
+                          </div>
+                          <span className="font-mono text-[9px] text-slate-400">
+                            {formatDate(reply.createdAt)}
                           </span>
                         </div>
-                        <span className="font-mono text-[9px] text-slate-400">{formatDate(reply.createdAt)}</span>
+                        <p className="mt-4 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">
+                          {reply.message}
+                        </p>
                       </div>
-                      <p className="mt-4 whitespace-pre-wrap text-xs leading-relaxed text-slate-700">
-                        {reply.message}
-                      </p>
                     </div>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
 
               {ticket.replies.length === 0 && (
                 <div className="rounded-xl border border-dashed border-slate-200 bg-white p-5 text-center text-xs text-slate-400">
@@ -406,6 +476,42 @@ export default function TicketDetailView({
                 </div>
               )}
             </div>
+          </section>
+
+          <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-xs">
+            <h2 className="text-xs font-semibold text-slate-800">Write a reply</h2>
+            <form onSubmit={handleCustomerReply} className="mt-4">
+              <textarea
+                rows={5}
+                maxLength={4000}
+                value={replyMessage}
+                onChange={(event) => setReplyMessage(event.target.value)}
+                disabled={ticket.status === 'closed' || isSendingReply}
+                placeholder={
+                  ticket.status === 'closed'
+                    ? 'This ticket is closed.'
+                    : 'Type your clarification or additional information here...'
+                }
+                className="block w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs leading-relaxed text-slate-800 outline-hidden transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 disabled:cursor-not-allowed disabled:bg-slate-50"
+              />
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3">
+                <span className="text-[10px] text-slate-400">
+                  {replyMessage.length}/4000
+                </span>
+                <button
+                  type="submit"
+                  disabled={
+                    ticket.status === 'closed' ||
+                    isSendingReply ||
+                    !replyMessage.trim()
+                  }
+                  className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-5 py-2.5 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  <span>{isSendingReply ? 'Sending...' : 'Send Reply'}</span>
+                </button>
+              </div>
+            </form>
           </section>
         </div>
 

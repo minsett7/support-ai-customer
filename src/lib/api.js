@@ -77,4 +77,14 @@ export function trackSupportTicket(trackingCode) {
   return request(`/api/tickets/track/${encodeURIComponent(trackingCode.trim().toUpperCase())}`);
 }
 
+export function createCustomerTicketReply(trackingCode, message) {
+  return request(
+    `/api/tickets/${encodeURIComponent(trackingCode.trim().toUpperCase())}/customer-replies`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ message })
+    }
+  );
+}
+
 export { BACKEND_URL };

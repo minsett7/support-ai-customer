@@ -314,6 +314,61 @@ async function createAgentReply({
   };
 }
 
+async function createCustomerReply({ trackingCode, message }) {
+  const ticket = await getTicketByTrackingCode(trackingCode);
+
+  if (ticket.status === 'closed') {
+    throw new AppError('Closed tickets cannot receive replies', 409);
+  }
+
+  const nextStatus =
+    ticket.status === 'submitted' ? 'submitted' : 'in_progress';
+  const now = new Date().toISOString();
+  const updates = {
+    status: nextStatus,
+    updated_at: now
+  };
+
+  if (ticket.status === 'resolved') {
+    updates.resolved_at = null;
+  }
+
+  const { data: reply, error: replyError } = await supabase
+    .from('support_ticket_replies')
+    .insert({
+      ticket_id: ticket.id,
+      tracking_code: ticket.trackingCode,
+      sender_type: 'customer',
+      sender_id: null,
+      sender_name: ticket.customerFullName,
+      message
+    })
+    .select('*')
+    .single();
+
+  if (replyError) {
+    throwDatabaseError(replyError);
+  }
+
+  const { data: updatedTicket, error: updateError } = await supabase
+    .from('support_tickets')
+    .update(updates)
+    .eq('id', ticket.id)
+    .select('*')
+    .single();
+
+  if (updateError) {
+    throwDatabaseError(updateError);
+  }
+
+  // TODO: Move reply insertion and status update into one PostgreSQL transaction/RPC.
+  // TODO: Authenticate the customer and verify ticket ownership.
+  return {
+    reply: mapTicketReply(reply),
+    ticket: mapTicket(updatedTicket)
+  };
+}
+
 module.exports = {
   createTicket,
   getTicketByTrackingCode,
@@ -321,5 +376,6 @@ module.exports = {
   getTicketsByStatus,
   acceptTicket,
   updateTicketStatus,
-  createAgentReply
+  createAgentReply,
+  createCustomerReply
 };

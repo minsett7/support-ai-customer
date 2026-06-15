@@ -170,11 +170,53 @@ const createAgentReply = asyncHandler(async (req, res) => {
   });
 });
 
+const createCustomerReply = asyncHandler(async (req, res) => {
+  // The tracking code acts as a bearer secret for this MVP.
+  // TODO: Add customer authentication, ownership checks, and rate limiting.
+  const message = requireLimitedString(req.body.message, 'message', 4000);
+  const result = await ticketService.createCustomerReply({
+    trackingCode: req.params.trackingCode,
+    message
+  });
+  const payload = {
+    ...result.reply,
+    status: result.ticket.status,
+    updatedAt: result.ticket.updatedAt,
+    resolvedAt: result.ticket.resolvedAt
+  };
+  const io = req.app.get('io');
+
+  io.to(`ticket:${result.ticket.trackingCode}`).emit('ticket_reply', payload);
+  io.to('support_dashboard').emit('ticket_reply', payload);
+
+  if (result.ticket.status === 'in_progress') {
+    const statusPayload = {
+      trackingCode: result.ticket.trackingCode,
+      status: result.ticket.status,
+      updatedAt: result.ticket.updatedAt,
+      resolvedAt: result.ticket.resolvedAt,
+      closedAt: result.ticket.closedAt
+    };
+
+    io.to(`ticket:${result.ticket.trackingCode}`).emit(
+      'ticket_status_updated',
+      statusPayload
+    );
+    io.to('support_dashboard').emit('ticket_status_updated', statusPayload);
+  }
+
+  res.status(201).json({
+    success: true,
+    data: payload
+  });
+});
+
 module.exports = {
   createTicket,
   trackTicket,
   getAgentTickets,
   acceptTicket,
   updateTicketStatus,
-  createAgentReply
+  createAgentReply,
+  createCustomerReply
 };

@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { HelpArticle, NotificationItem } from './types';
-import { MOCK_CUSTOMER, MOCK_ARTICLES, MOCK_NOTIFICATIONS } from './data';
+import { MOCK_CUSTOMER, MOCK_ARTICLES } from './data';
 import Navigation from './components/Navigation';
 import Footer from './components/Footer';
 import NotificationCenter from './components/NotificationCenter';
@@ -30,7 +30,7 @@ export default function App() {
   });
 
   const [articles] = useState<HelpArticle[]>(MOCK_ARTICLES);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   
   // UI states
   const [notifCenterOpen, setNotifCenterOpen] = useState(false);
