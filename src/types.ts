@@ -57,3 +57,38 @@ export interface NotificationItem {
   isRead: boolean;
   type: 'email' | 'system';
 }
+
+export type SupportTicketStatus =
+  | 'submitted'
+  | 'accepted'
+  | 'in_progress'
+  | 'resolved'
+  | 'closed';
+
+export type SupportTicketPriority = 'high' | 'medium' | 'low';
+
+export interface SupportTicketReply {
+  id: string;
+  trackingCode: string;
+  senderType: 'agent' | 'customer' | 'system';
+  senderId: string | null;
+  senderName: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface PublicSupportTicket {
+  trackingCode: string;
+  customerFullName: string;
+  category: string;
+  priority: SupportTicketPriority;
+  subject: string;
+  description: string;
+  status: SupportTicketStatus;
+  createdAt: string;
+  acceptedAt: string | null;
+  updatedAt: string;
+  resolvedAt: string | null;
+  closedAt: string | null;
+  replies: SupportTicketReply[];
+}

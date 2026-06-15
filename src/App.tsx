@@ -3,13 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
-import { Ticket, HelpArticle, NotificationItem, Message, TicketStatus } from './types';
-import { MOCK_CUSTOMER, MOCK_TICKETS, MOCK_ARTICLES, MOCK_NOTIFICATIONS } from './data';
+import React, { useState, useEffect, useCallback } from 'react';
+import { HelpArticle, NotificationItem } from './types';
+import { MOCK_CUSTOMER, MOCK_ARTICLES } from './data';
 import Navigation from './components/Navigation';
 import Footer from './components/Footer';
 import NotificationCenter from './components/NotificationCenter';
-import ChatWidget from './components/ChatWidget';
+import CustomerLiveChat from './components/live-chat/CustomerLiveChat';
 import HomeView from './components/HomeView';
 import SubmitTicketView from './components/SubmitTicketView';
 import TrackTicketView from './components/TrackTicketView';
@@ -29,10 +29,8 @@ export default function App() {
     return '/customer';
   });
 
-  // Track state of DB entities in React
-  const [tickets, setTickets] = useState<Ticket[]>(MOCK_TICKETS);
   const [articles] = useState<HelpArticle[]>(MOCK_ARTICLES);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   
   // UI states
   const [notifCenterOpen, setNotifCenterOpen] = useState(false);
@@ -65,70 +63,23 @@ export default function App() {
     window.location.hash = '#' + path;
   };
 
-  // 1. Submit Ticket Handler
-  const handleSubmitTicket = (newTicket: Ticket) => {
-    // Save to local tickets array
-    setTickets(prev => [newTicket, ...prev]);
-
-    // Generate Email Mockup notification inside sandbox
-    const emailNotif: NotificationItem = {
-      id: `notif-tick-rec-${Date.now()}`,
-      ticketId: newTicket.id,
-      subject: `Your support ticket ${newTicket.id} has been received`,
-      body: `Hi ${newTicket.customerName},\n\nWe received your support request about "${newTicket.subject}". Our support team will review and reply as soon as possible.\n\nAssigned Ticket ID: ${newTicket.id}\nTicket Status: ${newTicket.status}\nEst. Response Time: Usually within 24 hours\n\nSave your Ticket ID. You can use it with your email address to track this ticket.`,
+  const handleTicketNotification = useCallback((
+    trackingCode: string,
+    subject: string,
+    body: string
+  ) => {
+    const notification: NotificationItem = {
+      id: `ticket-update-${trackingCode}-${Date.now()}`,
+      ticketId: trackingCode,
+      subject,
+      body,
       timestamp: new Date().toISOString(),
       isRead: false,
-      type: 'email'
+      type: 'system'
     };
 
-    setNotifications(prev => [...prev, emailNotif]);
-  };
-
-  // 2. Ticket Reply Handler
-  const handleReplyTicket = (ticketId: string, message: Message, nextStatus: TicketStatus) => {
-    setTickets(prevTickets => {
-      return prevTickets.map(t => {
-        if (t.id === ticketId) {
-          const updatedConv = [...t.conversation, message];
-          return {
-            ...t,
-            lastUpdated: new Date().toISOString(),
-            status: nextStatus,
-            conversation: updatedConv
-          };
-        }
-        return t;
-      });
-    });
-
-    // If customer replied -> Dispatch automated receipt received mockup email
-    if (message.sender === 'customer') {
-      const customerReceiptNotif: NotificationItem = {
-        id: `notif-cust-rep-${Date.now()}`,
-        ticketId: ticketId,
-        subject: `[Received] Update to Support Ticket ${ticketId}`,
-        body: `Hi ${MOCK_CUSTOMER.name},\n\nWe have successfully received your feedback/reply on Support Ticket ${ticketId}.\n\nNew Comment: "${message.text}"\n\nOur service agents will review the parameters in detail and respond.`,
-        timestamp: new Date().toISOString(),
-        isRead: false,
-        type: 'email'
-      };
-      setNotifications(prev => [...prev, customerReceiptNotif]);
-    }
-
-    // If agent replica simulated -> Send agent feedback notification mockup email
-    if (message.sender === 'agent') {
-      const agentReplyNotif: NotificationItem = {
-        id: `notif-agent-rep-${Date.now()}`,
-        ticketId: ticketId,
-        subject: `New agent reply to Support Ticket ${ticketId}`,
-        body: `Hi ${MOCK_CUSTOMER.name},\n\nOur Support Specialist Michael / Sarah added a response to your ticket ${ticketId}:\n\n"${message.text}"\n\nPlease log in to the Ticket Tracker using your Ticket ID to read the message and file follow-up disclosures.`,
-        timestamp: new Date().toISOString(),
-        isRead: false,
-        type: 'email'
-      };
-      setNotifications(prev => [...prev, agentReplyNotif]);
-    }
-  };
+    setNotifications((current) => [...current, notification]);
+  }, []);
 
   const handleMarkAllNotificationsRead = () => {
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
@@ -198,10 +149,8 @@ export default function App() {
     if (path === '/customer/submit-ticket') {
       return (
         <SubmitTicketView 
-          onSubmitTicket={handleSubmitTicket} 
           onNavigate={navigate} 
           customerName={MOCK_CUSTOMER.name} 
-          customerEmail={MOCK_CUSTOMER.email} 
         />
       );
     }
@@ -209,22 +158,20 @@ export default function App() {
     // Route: /customer/track-ticket
     if (path === '/customer/track-ticket') {
       return (
-        <TrackTicketView 
-          tickets={tickets} 
-          onNavigate={navigate} 
-        />
+        <TrackTicketView onNavigate={navigate} />
       );
     }
 
     // Route: /customer/tickets/:id
     if (path.startsWith('/customer/tickets/')) {
-      const tickId = path.substring('/customer/tickets/'.length);
+      const trackingCode = decodeURIComponent(
+        path.substring('/customer/tickets/'.length)
+      );
       return (
         <TicketDetailView 
-          ticketId={tickId} 
-          tickets={tickets} 
-          onReplyTicket={handleReplyTicket} 
+          trackingCode={trackingCode}
           onNavigate={navigate} 
+          onTicketNotification={handleTicketNotification}
         />
       );
     }
@@ -311,11 +258,7 @@ export default function App() {
       />
 
       {/* Floater Live chat integration */}
-      <ChatWidget
-        onNavigate={navigate}
-        customerEmail={MOCK_CUSTOMER.email}
-        customerName={MOCK_CUSTOMER.name}
-      />
+      <CustomerLiveChat />
 
     </div>
   );
