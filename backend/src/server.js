@@ -8,6 +8,7 @@ const { Server } = require('socket.io');
 const chatRoutes = require('./routes/chat.routes');
 const agentRoutes = require('./routes/agent.routes');
 const ticketRoutes = require('./routes/ticket.routes');
+const helpArticleRoutes = require('./routes/helpArticle.routes');
 const registerChatSocket = require('./sockets/chat.socket');
 const { notFoundHandler, errorHandler } = require('./utils/errors');
 
@@ -54,6 +55,7 @@ app.get('/health', (req, res) => {
 app.use('/api/chat', chatRoutes);
 app.use('/api/agent', agentRoutes);
 app.use('/api/tickets', ticketRoutes);
+app.use('/api/help-articles', helpArticleRoutes);
 
 registerChatSocket(io);
 

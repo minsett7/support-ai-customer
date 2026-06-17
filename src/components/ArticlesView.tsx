@@ -17,6 +17,8 @@ import {
 
 interface ArticlesViewProps {
   articles: HelpArticle[];
+  loading?: boolean;
+  error?: string | null;
   selectedArticleId?: string;
   categoryFilter?: string;
   onNavigate: (route: string) => void;
@@ -24,6 +26,8 @@ interface ArticlesViewProps {
 
 export default function ArticlesView({
   articles,
+  loading = false,
+  error = null,
   selectedArticleId,
   categoryFilter = '',
   onNavigate
@@ -194,6 +198,35 @@ export default function ArticlesView({
     );
   }
 
+  if (selectedArticleId && loading) {
+    return (
+      <div className="max-w-3xl mx-auto bg-white border border-slate-100 rounded-3xl p-8 shadow-xs text-center space-y-3 font-sans fade-in-el">
+        <FileText className="h-8 w-8 text-blue-500 mx-auto animate-pulse" />
+        <h2 className="font-semibold text-slate-800 text-sm">Loading help article...</h2>
+        <p className="text-xs text-slate-500">Fetching the latest guide from the knowledge base.</p>
+      </div>
+    );
+  }
+
+  if (selectedArticleId && !loading) {
+    return (
+      <div className="max-w-3xl mx-auto bg-white border border-slate-100 rounded-3xl p-8 shadow-xs text-center space-y-4 font-sans fade-in-el">
+        <HelpCircle className="h-10 w-10 text-slate-400 mx-auto" />
+        <div className="space-y-1">
+          <h2 className="font-semibold text-slate-800 text-sm">Article not found</h2>
+          <p className="text-xs text-slate-500">This guide may have moved or is not available in the current knowledge base.</p>
+        </div>
+        <button
+          onClick={() => onNavigate('/customer/articles')}
+          className="inline-flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-xl shadow-xs cursor-pointer"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          <span>Back to Articles</span>
+        </button>
+      </div>
+    );
+  }
+
   // 2. RENDER ARTICLES LIST
   return (
     <div className="space-y-8 font-sans fade-in-el" id="articles-list-view">
@@ -207,6 +240,12 @@ export default function ArticlesView({
           Browse verified instructions, security logs, and payment policies to troubleshoot quick setups.
         </p>
       </div>
+
+      {error && (
+        <div className="bg-amber-50 border border-amber-100 text-amber-800 rounded-2xl px-4 py-3 text-xs font-medium">
+          {error}
+        </div>
+      )}
 
       {/* Control Area: Tab filter + Search bar */}
       <div className="flex flex-col md:flex-row gap-4 justify-between items-stretch">
@@ -248,7 +287,13 @@ export default function ArticlesView({
       </div>
 
       {/* Articles Cards Grid */}
-      {visibleArticles.length === 0 ? (
+      {loading ? (
+        <div className="bg-white border border-slate-100 p-12 text-center rounded-2xl shadow-3xs max-w-md mx-auto space-y-3">
+          <FileText className="h-10 w-10 text-blue-500 mx-auto animate-pulse" />
+          <h3 className="text-slate-700 font-semibold text-xs sm:text-sm">Loading help articles</h3>
+          <p className="text-[11px] text-slate-450">Fetching the latest knowledge base guides.</p>
+        </div>
+      ) : visibleArticles.length === 0 ? (
         <div className="bg-white border border-slate-100 p-12 text-center rounded-2xl shadow-3xs max-w-md mx-auto space-y-3">
           <HelpCircle className="h-10 w-10 text-slate-400 mx-auto" />
           <h3 className="text-slate-700 font-semibold text-xs sm:text-sm">No documented articles match filters</h3>

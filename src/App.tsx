@@ -17,6 +17,7 @@ import TicketDetailView from './components/TicketDetailView';
 import ArticlesView from './components/ArticlesView';
 import ContactView from './components/ContactView';
 import { LayoutGrid, ShieldAlert, Sparkles, AlertCircle } from 'lucide-react';
+import { fetchHelpArticles } from './lib/helpArticlesApi';
 
 export default function App() {
   
@@ -29,7 +30,9 @@ export default function App() {
     return '/customer';
   });
 
-  const [articles] = useState<HelpArticle[]>(MOCK_ARTICLES);
+  const [articles, setArticles] = useState<HelpArticle[]>([]);
+  const [articlesLoading, setArticlesLoading] = useState(true);
+  const [articlesError, setArticlesError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   
   // UI states
@@ -57,6 +60,39 @@ export default function App() {
     }
 
     return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadHelpArticles() {
+      setArticlesLoading(true);
+      setArticlesError(null);
+
+      try {
+        const loadedArticles = await fetchHelpArticles();
+
+        if (!isMounted) return;
+
+        setArticles(loadedArticles);
+      } catch (error) {
+        if (!isMounted) return;
+
+        console.error('Unable to load help articles:', error);
+        setArticles(MOCK_ARTICLES);
+        setArticlesError('Live help articles are unavailable, so demo articles are shown.');
+      } finally {
+        if (isMounted) {
+          setArticlesLoading(false);
+        }
+      }
+    }
+
+    loadHelpArticles();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const navigate = (path: string) => {
@@ -127,6 +163,8 @@ export default function App() {
       return (
         <ArticlesView 
           articles={articles} 
+          loading={articlesLoading}
+          error={articlesError}
           categoryFilter={categoryParam} 
           onNavigate={navigate} 
         />
@@ -139,6 +177,8 @@ export default function App() {
       return (
         <ArticlesView 
           articles={articles} 
+          loading={articlesLoading}
+          error={articlesError}
           selectedArticleId={artId} 
           onNavigate={navigate} 
         />
