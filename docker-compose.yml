@@ -1,0 +1,12 @@
+services:
+  customer-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:5000}
+    image: support-customer-ui:latest
+    container_name: support-customer-ui
+    ports:
+      - "${CUSTOMER_UI_PORT:-3000}:80"
+    restart: unless-stopped
